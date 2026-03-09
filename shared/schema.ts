@@ -1,18 +1,16 @@
-import { sql } from "drizzle-orm";
-import { pgTable, text, varchar } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+// We only store the document metadata here.
+// The chunks and embeddings will be managed by LangChain's PGVectorStore automatically.
+export const documents = pgTable("documents", {
+  id: serial("id").primaryKey(),
+  filename: text("filename").notNull(),
+  fileType: text("fileType").notNull(),
+  uploadDate: timestamp("uploadDate").defaultNow(),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
-});
-
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
+export const insertDocumentSchema = createInsertSchema(documents).omit({ id: true, uploadDate: true });
+export type Document = typeof documents.$inferSelect;
+export type InsertDocument = z.infer<typeof insertDocumentSchema>;
