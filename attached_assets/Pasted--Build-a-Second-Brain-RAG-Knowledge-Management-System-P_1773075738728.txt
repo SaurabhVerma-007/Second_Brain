@@ -1,0 +1,208 @@
+# Build a Second Brain RAG Knowledge Management System
+
+## Project Overview
+Create a personal knowledge management system that uses RAG (Retrieval-Augmented Generation) to capture, store, and retrieve information from documents. This "Second Brain" helps users maintain and query their accumulated knowledge over time.
+
+## Technical Stack
+- **Backend**: Python 3.11+
+- **RAG Framework**: LangChain
+- **Vector Database**: ChromaDB (local, persistent storage)
+- **Embeddings**: OpenAI text-embedding-3-small
+- **LLM**: OpenAI GPT-4o-mini (for cost efficiency)
+- **Frontend**: Streamlit
+- **File Processing**: Support for .txt, .md, .pdf files initially
+
+## Core Features for MVP
+
+### 1. Document Ingestion System
+- Create an upload interface where users can add documents (markdown, text, PDF files)
+- Implement chunking strategy: split documents into ~500 token chunks with 50 token overlap
+- Generate embeddings for each chunk using OpenAI
+- Store chunks with metadata (source file, timestamp, chunk index) in ChromaDB
+- Display ingestion progress and confirmation
+
+### 2. Vector Storage & Retrieval
+- Initialize ChromaDB with persistent local storage in a `./chroma_db` directory
+- Create a collection called "knowledge_base"
+- Store document chunks with embeddings and metadata
+- Implement semantic search to retrieve top 5 most relevant chunks for any query
+
+### 3. Query Interface
+- Create a chat-style interface where users can ask questions
+- Retrieve relevant context from the vector database
+- Use retrieved chunks as context for GPT-4o-mini to generate answers
+- Display both the AI response AND the source chunks that were used
+- Show which documents the information came from
+
+### 4. Knowledge Browser
+- Create a sidebar or separate page listing all ingested documents
+- Show document count and total chunks stored
+- Allow users to view individual documents and their chunks
+- Provide ability to delete documents from the knowledge base
+
+## File Structure
+```
+second-brain/
+├── main.py                 # Streamlit app entry point
+├── requirements.txt        # Dependencies
+├── .env.example           # Template for API keys
+├── src/
+│   ├── __init__.py
+│   ├── ingestion.py       # Document loading and chunking
+│   ├── embeddings.py      # Embedding generation
+│   ├── vectorstore.py     # ChromaDB operations
+│   ├── retrieval.py       # Query and retrieval logic
+│   └── generation.py      # LLM response generation
+├── chroma_db/             # Persistent vector storage (gitignored)
+└── uploads/               # Temporary file storage (gitignored)
+```
+
+## Implementation Requirements
+
+### Step 1: Environment Setup
+- Create `requirements.txt` with:
+  - streamlit
+  - langchain
+  - langchain-openai
+  - langchain-community
+  - chromadb
+  - pypdf
+  - python-dotenv
+  - tiktoken
+- Create `.env.example` with placeholder for `OPENAI_API_KEY`
+- Add .gitignore for .env, chroma_db/, uploads/
+
+### Step 2: Vector Store Module (`src/vectorstore.py`)
+- Create a class `KnowledgeBase` that:
+  - Initializes ChromaDB with persistent storage
+  - Provides methods to add documents with embeddings
+  - Implements similarity search
+  - Tracks document metadata
+  - Provides methods to list and delete documents
+
+### Step 3: Ingestion Module (`src/ingestion.py`)
+- Create document loaders for different file types
+- Implement text chunking using RecursiveCharacterTextSplitter
+- Extract metadata (filename, upload date, file type)
+- Process documents into chunks ready for embedding
+
+### Step 4: Retrieval Module (`src/retrieval.py`)
+- Implement semantic search using ChromaDB
+- Return top-k relevant chunks (default k=5)
+- Include similarity scores
+- Format retrieved context for LLM consumption
+
+### Step 5: Generation Module (`src/generation.py`)
+- Create prompt template that includes retrieved context
+- Use GPT-4o-mini with temperature=0.7
+- Format responses clearly
+- Include source attribution in responses
+
+### Step 6: Streamlit UI (`main.py`)
+Create a multi-page Streamlit app with:
+
+**Page 1: Chat Interface**
+- Text input for queries
+- Display conversation history
+- Show AI responses with source citations
+- Display retrieved chunks in expandable sections
+
+**Page 2: Document Upload**
+- File uploader supporting .txt, .md, .pdf
+- Progress bar during ingestion
+- Success/error messages
+- List of recently added documents
+
+**Page 3: Knowledge Base Browser**
+- Statistics: total documents, total chunks
+- Searchable list of all documents
+- Preview document content
+- Delete button for each document
+
+### Step 7: Configuration & Settings
+- Sidebar with:
+  - API key input (if not in .env)
+  - Chunk size configuration (default: 500)
+  - Chunk overlap configuration (default: 50)
+  - Number of retrieval results (default: 5)
+  - Temperature setting for LLM (default: 0.7)
+
+## Key Functional Requirements
+
+1. **First-Time Setup**: 
+   - App should check if OpenAI API key is configured
+   - Show setup instructions if not found
+   - Initialize ChromaDB on first run
+
+2. **Document Processing**:
+   - Handle encoding errors gracefully
+   - Show clear error messages for unsupported files
+   - Preserve document structure in metadata
+   - Generate unique IDs for each chunk
+
+3. **Query Processing**:
+   - Return "I don't have enough information" if no relevant chunks found
+   - Always cite sources in responses
+   - Handle empty knowledge base gracefully
+
+4. **Data Persistence**:
+   - ChromaDB data persists between sessions
+   - No data loss on app restart
+   - Backup/export capability (optional)
+
+## Example User Flow
+
+1. User uploads a markdown file about Python best practices
+2. System chunks the document and stores embeddings
+3. User asks: "What are Python naming conventions?"
+4. System retrieves relevant chunks about naming
+5. GPT-4o-mini generates answer using retrieved context
+6. User sees response with source attribution
+7. User can view the original chunks that were used
+
+## Success Criteria
+
+- [ ] Can successfully upload and process .txt, .md, and .pdf files
+- [ ] Chunks are stored persistently in ChromaDB
+- [ ] Queries return relevant information from uploaded documents
+- [ ] Responses include source citations
+- [ ] UI is clean and intuitive
+- [ ] No errors when knowledge base is empty
+- [ ] Data persists between sessions
+
+## Nice-to-Have Enhancements (mention but don't implement in MVP)
+- Batch upload multiple files
+- Document tags and categories
+- Advanced filters (date range, document type)
+- Export knowledge base to JSON
+- Daily review feature showing random past content
+- Visual graph of document relationships
+- Conversation history persistence
+- Multi-user support with separate knowledge bases
+
+## Important Notes for Implementation
+
+1. **Error Handling**: Wrap all OpenAI API calls in try-except blocks with user-friendly error messages
+2. **Cost Awareness**: Use text-embedding-3-small (cheap) and GPT-4o-mini (affordable) to keep costs low
+3. **Token Limits**: Ensure retrieved context doesn't exceed model context window
+4. **User Experience**: Show loading spinners during embedding generation and queries
+5. **Security**: Never commit .env file, always use environment variables for API keys
+
+## Testing Checklist
+- Upload a sample document
+- Query for content that exists in the document
+- Query for content that doesn't exist
+- Delete a document and verify it's removed
+- Restart app and verify data persistence
+- Test with different file types
+- Test with large documents (>10 pages)
+
+## Deliverables
+- Fully functional Streamlit application
+- Clean, documented code
+- README.md with setup instructions
+- requirements.txt with all dependencies
+- .env.example template
+- Working demo with at least one uploaded document
+
+Please build this incrementally, testing each component before moving to the next. Start with the vector store and ingestion, then add retrieval, then generation, and finally the Streamlit UI.
