@@ -115,12 +115,11 @@ export default function Chat() {
                   >
                     {msg.isError && <AlertCircle className="w-5 h-5 mb-2" />}
                     {msg.role === 'assistant' ? (
-                      <ReactMarkdown 
-                        remarkPlugins={[remarkGfm]}
-                        className="prose prose-sm md:prose-base dark:prose-invert max-w-none break-words"
-                      >
-                        {msg.content}
-                      </ReactMarkdown>
+                      <div className="prose prose-sm md:prose-base dark:prose-invert max-w-none break-words">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {msg.content}
+                        </ReactMarkdown>
+                      </div>
                     ) : (
                       <p className="whitespace-pre-wrap">{msg.content}</p>
                     )}
