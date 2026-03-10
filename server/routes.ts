@@ -5,33 +5,17 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import multer from "multer";
 import fs from "fs/promises";
-import path from "path";
-import { OpenAIEmbeddings, ChatOpenAI } from "@langchain/openai";
-import { PGVectorStore } from "@langchain/community/vectorstores/pgvector";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 import { Document as LangchainDocument } from "@langchain/core/documents";
-import { pool } from "./db";
+import OpenAI from "openai";
 
 const upload = multer({ dest: "uploads/" });
 
-// Initialize PGVector store
-const embeddings = new OpenAIEmbeddings({
-  modelName: "text-embedding-3-small",
+const openai = new OpenAI({
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
-
-async function getVectorStore() {
-  return await PGVectorStore.initialize(embeddings, {
-    pool,
-    tableName: "knowledge_base",
-    columns: {
-      idColumnName: "id",
-      vectorColumnName: "embedding",
-      contentColumnName: "content",
-      metadataColumnName: "metadata",
-    },
-  });
-}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -61,12 +45,7 @@ export async function registerRoutes(
 
       const file = req.file;
       const originalName = file.originalname;
-      const fileExt = path.extname(originalName).toLowerCase();
-
-      // Ensure API key is set
-      if (!process.env.OPENAI_API_KEY) {
-         return res.status(500).json({ message: "OPENAI_API_KEY is not configured" });
-      }
+      const fileExt = file.originalname.toLowerCase().slice(-4);
 
       // Load document
       let docs: LangchainDocument[] = [];
@@ -89,26 +68,15 @@ export async function registerRoutes(
 
       const chunkedDocs = await splitter.splitDocuments(docs);
       
-      // Save metadata to db
+      // Combine all chunks into full content
+      const fullContent = chunkedDocs.map(c => c.pageContent).join("\n\n");
+
+      // Save document with full content
       const docRecord = await storage.createDocument({
         filename: originalName,
         fileType: fileExt,
+        content: fullContent,
       });
-
-      // Add metadata to chunks
-      const chunksWithMetadata = chunkedDocs.map((chunk, index) => {
-        chunk.metadata = {
-          ...chunk.metadata,
-          source_file: originalName,
-          doc_id: docRecord.id,
-          chunk_index: index,
-        };
-        return chunk;
-      });
-
-      // Generate embeddings and store in PGVector
-      const vectorStore = await getVectorStore();
-      await vectorStore.addDocuments(chunksWithMetadata);
 
       // Clean up uploaded file
       await fs.unlink(file.path);
@@ -132,14 +100,6 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid ID" });
       }
 
-      // First delete from vector store
-      // The PGVectorStore wrapper in LangChain doesn't have a direct "delete by metadata" method,
-      // so we'll execute a direct SQL query to remove associated vectors.
-      await pool.query(
-        "DELETE FROM knowledge_base WHERE metadata->>'doc_id' = $1",
-        [id.toString()]
-      );
-
       // Delete from metadata storage
       await storage.deleteDocument(id);
 
@@ -154,31 +114,25 @@ export async function registerRoutes(
     try {
       const { query } = api.chat.query.input.parse(req.body);
 
-      if (!process.env.OPENAI_API_KEY) {
-        return res.status(500).json({ message: "OPENAI_API_KEY is not configured" });
-      }
+      // Simple full-text search: find documents where content contains the query (case-insensitive)
+      const allDocs = await storage.getDocuments();
+      const relevantDocs = allDocs.filter(doc => 
+        doc.content && doc.content.toLowerCase().includes(query.toLowerCase())
+      ).slice(0, 5); // Top 5
 
-      const vectorStore = await getVectorStore();
-      
-      // Retrieve top 5 chunks
-      const results = await vectorStore.similaritySearch(query, 5);
-
-      if (results.length === 0) {
+      if (relevantDocs.length === 0) {
         return res.status(200).json({
           answer: "I don't have enough information in my knowledge base to answer this question.",
           sources: []
         });
       }
 
-      // Format context
-      const contextText = results.map(r => r.pageContent).join("\\n\\n");
+      // Format context from relevant documents
+      const contextText = relevantDocs
+        .map(doc => `[${doc.filename}]\n${doc.content.slice(0, 1000)}...`)
+        .join("\n\n");
 
-      // Generate answer
-      const llm = new ChatOpenAI({
-        modelName: "gpt-4o-mini",
-        temperature: 0.7,
-      });
-
+      // Generate answer with GPT
       const prompt = `You are an AI assistant helping a user query their personal knowledge base.
 Use the following pieces of retrieved context to answer the user's question.
 If you don't know the answer based on the context, just say that you don't know or don't have enough information.
@@ -191,13 +145,18 @@ Question: ${query}
 
 Answer:`;
 
-      const response = await llm.invoke(prompt);
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.7,
+        max_tokens: 8192,
+      });
 
       res.status(200).json({
-        answer: response.content as string,
-        sources: results.map(r => ({
-          filename: r.metadata.source_file || "Unknown",
-          content: r.pageContent,
+        answer: response.choices[0]?.message?.content || "Unable to generate response",
+        sources: relevantDocs.map(doc => ({
+          filename: doc.filename,
+          content: doc.content.slice(0, 500),
         }))
       });
 
