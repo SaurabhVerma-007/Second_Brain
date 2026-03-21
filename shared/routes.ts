@@ -21,3 +21,12 @@ export const api = {
     },
   },
 };
+
+// Helper to replace :param placeholders in paths
+export function buildUrl(path: string, params: Record<string, string | number> = {}): string {
+  let url = path;
+  for (const [key, value] of Object.entries(params)) {
+    url = url.replace(`:${key}`, String(value));
+  }
+  return url;
+}
