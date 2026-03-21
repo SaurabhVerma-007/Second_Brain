@@ -1,7 +1,0 @@
-
-> rest-express@1.0.0 dev
-> NODE_ENV=development tsx server/index.ts
-
-[1G[0K5:20:42 PM [express] serving on port 5000
-5:21:36 PM [express] POST /api/documents 500 in 831ms :: {"message":"OPENAI_API_KEY is not configured"}
-5:21:49 PM [express] POST /api/chat 500 in 1ms :: {"message":"OPENAI_API_KEY is not configured"}
