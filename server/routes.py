@@ -14,8 +14,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from openai import OpenAI
 
-from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from pypdf import PdfReader
+
 
 from server.db import get_db
 from server.storage import storage
@@ -115,15 +115,22 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
 
     try:
         if ext == ".pdf":
-            loader = PyPDFLoader(tmp_path)
-            pages = loader.load()
-            raw_text = "\n\n".join(p.page_content for p in pages)
+            reader = PdfReader(tmp_path)
+            raw_text = "\n\n".join(page.extract_text() or "" for page in reader.pages)
         else:
             with open(tmp_path, "r", encoding="utf-8") as f:
                 raw_text = f.read()
 
-        splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-        chunks = splitter.split_text(raw_text)
+        # Simple chunking without LangChain
+        chunk_size = 500
+        overlap = 50
+        words = raw_text.split()
+        chunks = []
+        i = 0
+        while i < len(words):
+            chunk = " ".join(words[i:i + chunk_size])
+            chunks.append(chunk)
+            i += chunk_size - overlap
         full_content = "\n\n".join(chunks)
 
         print(f"[embed] Embedding '{filename}'...")
