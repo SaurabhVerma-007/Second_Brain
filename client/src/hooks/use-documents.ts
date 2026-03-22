@@ -1,72 +1,83 @@
-import { z } from "zod";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api, buildUrl } from "@shared/routes";
+import { useToast } from "@/hooks/use-toast";
 
-const documentSchema = z.object({
-  id: z.number(),
-  filename: z.string(),
-  fileType: z.string(),
-  uploadDate: z.string(),
-});
+export function useDocuments() {
+  return useQuery({
+    queryKey: [api.documents.list.path],
+    queryFn: async () => {
+      const res = await fetch(api.documents.list.path, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch documents");
+      return res.json();
+    },
+  });
+}
 
-const uploadResponseSchema = z.object({
-  id: z.number(),
-  filename: z.string(),
-  message: z.string(),
-});
+export function useUploadDocument() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
-export const api = {
-  documents: {
-    list: {
-      path: "/api/documents",
-      method: "GET",
-      responses: {
-        200: z.array(documentSchema),
-      },
-    },
-    upload: {
-      path: "/api/documents",
-      method: "POST",
-      responses: {
-        201: uploadResponseSchema,
-      },
-    },
-    delete: {
-      path: "/api/documents/:id",
-      method: "DELETE",
-      responses: {
-        200: z.object({ message: z.string() }),
-      },
-    },
-  },
-  chat: {
-    query: {
-      path: "/api/chat",
-      method: "POST",
-      input: z.object({
-        query: z.string().min(1),
-      }),
-      responses: {
-        200: z.object({
-          answer: z.string(),
-          sources: z.array(
-            z.object({
-              filename: z.string(),
-              content: z.string(),
-            })
-          ),
-        }),
-      },
-    },
-  },
-};
+  return useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
 
-// Helper to replace :param placeholders in paths
-export function buildUrl(
-  path: string,
-  params: Record<string, string | number> = {}
-): string {
-  let url = path;
-  for (const [key, value] of Object.entries(params)) {
-    url = url.replace(`:${key}`, String(value));
-  }
-  return url;
+      const res = await fetch(api.documents.upload.path, {
+        method: api.documents.upload.method,
+        body: formData,
+        credentials: "include",
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to upload document");
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [api.documents.list.path] });
+      toast({
+        title: "Upload Successful",
+        description: `${data.filename} has been added to your knowledge base.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Upload Failed",
+        description: error.message,
+      });
+    },
+  });
+}
+
+export function useDeleteDocument() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const url = buildUrl(api.documents.delete.path, { id });
+      const res = await fetch(url, {
+        method: api.documents.delete.method,
+        credentials: "include",
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to delete document");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.documents.list.path] });
+      toast({
+        title: "Document Deleted",
+        description: "The document has been removed from your knowledge base.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Deletion Failed",
+        description: error.message,
+      });
+    },
+  });
 }
